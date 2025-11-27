@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>MQTT Chat</title>
+</head>
+<body>
+    <h2>Live Chat</h2>
+    <div id="log" style="height:400px; overflow:auto; border:1px solid #ccc; padding:10px; background:#f9f9f9;"></div>
+    <input id="msg" placeholder="Type message..." style="width:70%" />
+    <button onclick="send()">Send</button>
+
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+    <script>
+    console.log('Script loaded!');
+    
+    // Essayez ce broker au lieu de HiveMQ
+    const client = mqtt.connect('wss://test.mosquitto.org:8081');
+    const topic = 'demo/chat';
+
+    client.on('connect', () => {
+        client.subscribe(topic);
+        log('Connected & subscribed!');
+        console.log('MQTT Connected!');
+    });
+
+    client.on('message', (t, msg) => {
+        log('← ' + msg.toString());
+        console.log('Message received:', msg.toString());
+    });
+
+    client.on('error', (err) => {
+        console.error('MQTT Error:', err);
+        log('Error: ' + err.message);
+    });
+
+    function send() {
+        const text = document.getElementById('msg').value;
+        if (text.trim()) {
+            client.publish(topic, text);
+            console.log('Message sent:', text);
+            document.getElementById('msg').value = '';
+        }
+    }
+
+    function log(text) {
+        const div = document.createElement('div');
+        div.textContent = new Date().toLocaleTimeString() + ' | ' + text;
+        document.getElementById('log').appendChild(div);
+        div.scrollIntoView();
+    }
+
+    document.getElementById('msg').addEventListener('keypress', e => {
+        if (e.key === 'Enter') send();
+    });
+</script>
+</body>
+</html>
