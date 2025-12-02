@@ -3,56 +3,212 @@
 <head>
     <meta charset="UTF-8">
     <title>MQTT Chat</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        #log {
+            height: 400px;
+            overflow-y: auto;
+            border: 1px solid #ccc;
+            padding: 10px;
+            background: #f9f9f9;
+            margin-bottom: 10px;
+        }
+        .message {
+            margin: 5px 0;
+            padding: 5px;
+        }
+        .username {
+            font-weight: bold;
+            color: #0066cc;
+        }
+        .timestamp {
+            font-size: 0.8em;
+            color: #666;
+        }
+        .input-area {
+            display: flex;
+            gap: 10px;
+        }
+        #msg {
+            flex: 1;
+            padding: 10px;
+            font-size: 14px;
+        }
+        button {
+            padding: 10px 20px;
+            background: #0066cc;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #0052a3;
+        }
+        #usernameModal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        #usernameBox {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            text-align: center;
+        }
+        #usernameBox input {
+            padding: 10px;
+            font-size: 16px;
+            margin: 10px 0;
+            width: 200px;
+        }
+    </style>
 </head>
 <body>
-    <h2>Live Chat</h2>
-    <div id="log" style="height:400px; overflow:auto; border:1px solid #ccc; padding:10px; background:#f9f9f9;"></div>
-    <input id="msg" placeholder="Type message..." style="width:70%" />
-    <button onclick="send()">Send</button>
+    <!-- Modal pour entrer le nom d'utilisateur -->
+    <div id="usernameModal">
+        <div id="usernameBox">
+            <h2>Bienvenue au Chat!</h2>
+            <p>Entrez votre nom:</p>
+            <input type="text" id="usernameInput" placeholder="Votre nom..." />
+            <br>
+            <button onclick="setUsername()">Rejoindre le Chat</button>
+        </div>
+    </div>
+
+    <h2>Live Chat 💬</h2>
+    <div id="status" style="color: green; margin-bottom: 10px;">Connecting...</div>
+    <div id="log"></div>
+    <div class="input-area">
+        <input id="msg" placeholder="Type message..." disabled />
+        <button onclick="send()" id="sendBtn" disabled>Send</button>
+    </div>
 
     <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
     <script>
-    console.log('Script loaded!');
-    
-    // Essayez ce broker au lieu de HiveMQ
-    const client = mqtt.connect('wss://test.mosquitto.org:8081');
-    const topic = 'demo/chat';
+        let username = '';
+        let client;
+        const topic = 'demo/chat';
 
-    client.on('connect', () => {
-        client.subscribe(topic);
-        log('Connected & subscribed!');
-        console.log('MQTT Connected!');
-    });
-
-    client.on('message', (t, msg) => {
-        log('← ' + msg.toString());
-        console.log('Message received:', msg.toString());
-    });
-
-    client.on('error', (err) => {
-        console.error('MQTT Error:', err);
-        log('Error: ' + err.message);
-    });
-
-    function send() {
-        const text = document.getElementById('msg').value;
-        if (text.trim()) {
-            client.publish(topic, text);
-            console.log('Message sent:', text);
-            document.getElementById('msg').value = '';
+        // Fonction pour définir le nom d'utilisateur
+        function setUsername() {
+            const input = document.getElementById('usernameInput').value.trim();
+            if (input) {
+                username = input;
+                document.getElementById('usernameModal').style.display = 'none';
+                connectMQTT();
+            } else {
+                alert('Veuillez entrer un nom!');
+            }
         }
-    }
 
-    function log(text) {
-        const div = document.createElement('div');
-        div.textContent = new Date().toLocaleTimeString() + ' | ' + text;
-        document.getElementById('log').appendChild(div);
-        div.scrollIntoView();
-    }
+        // Permettre Enter pour définir le nom
+        document.getElementById('usernameInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') setUsername();
+        });
 
-    document.getElementById('msg').addEventListener('keypress', e => {
-        if (e.key === 'Enter') send();
-    });
-</script>
+        // Connexion MQTT
+        function connectMQTT() {
+            console.log('Connecting to MQTT...');
+            client = mqtt.connect('wss://test.mosquitto.org:8081');
+
+            client.on('connect', () => {
+                client.subscribe(topic);
+                document.getElementById('status').textContent = '✅ Connected as: ' + username;
+                document.getElementById('msg').disabled = false;
+                document.getElementById('sendBtn').disabled = false;
+                console.log('MQTT Connected!');
+                
+                // Message de connexion
+                const joinMsg = {
+                    username: username,
+                    text: 'a rejoint le chat',
+                    timestamp: Date.now(),
+                    type: 'join'
+                };
+                client.publish(topic, JSON.stringify(joinMsg));
+            });
+
+            client.on('message', (t, payload) => {
+                try {
+                    const msg = JSON.parse(payload.toString());
+                    displayMessage(msg);
+                } catch (e) {
+                    // Si c'est un ancien message texte simple
+                    displayMessage({
+                        username: 'Anonyme',
+                        text: payload.toString(),
+                        timestamp: Date.now(),
+                        type: 'message'
+                    });
+                }
+            });
+
+            client.on('error', (err) => {
+                console.error('MQTT Error:', err);
+                document.getElementById('status').textContent = '❌ Error: ' + err.message;
+                document.getElementById('status').style.color = 'red';
+            });
+        }
+
+        // Envoyer un message
+        function send() {
+            const text = document.getElementById('msg').value.trim();
+            if (text && client) {
+                const message = {
+                    username: username,
+                    text: text,
+                    timestamp: Date.now(),
+                    type: 'message'
+                };
+                client.publish(topic, JSON.stringify(message));
+                document.getElementById('msg').value = '';
+            }
+        }
+
+        // Afficher un message
+        function displayMessage(msg) {
+            const div = document.createElement('div');
+            div.className = 'message';
+            
+            const time = new Date(msg.timestamp).toLocaleTimeString();
+            
+            if (msg.type === 'join') {
+                div.innerHTML = `
+                    <span class="timestamp">${time}</span> 
+                    <span style="color: #28a745; font-style: italic;">
+                        ${msg.username} ${msg.text}
+                    </span>
+                `;
+            } else {
+                const isMe = msg.username === username;
+                div.innerHTML = `
+                    <span class="timestamp">${time}</span> 
+                    <span class="username" style="color: ${isMe ? '#0066cc' : '#ff6600'};">
+                        ${msg.username}:
+                    </span> 
+                    <span>${msg.text}</span>
+                `;
+            }
+            
+            document.getElementById('log').appendChild(div);
+            div.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        // Enter pour envoyer
+        document.getElementById('msg').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') send();
+        });
+    </script>
 </body>
 </html>
